@@ -12,7 +12,7 @@ export class MapUploader {
     }
 
     private static async uploadMapImplAsync(file: File, mapFileName: string): Promise<string | null> {
-        const requestUri = `/api/public/rust-map-upload/${mapFileName}`;
+        const requestUri = `https://api.facepunch.com/api/public/rust-map-upload/${mapFileName}`;
         let retries = 0;
 
         while (retries < 10) {
