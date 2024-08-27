@@ -1,23 +1,19 @@
-import axios, { AxiosResponse } from 'axios';
+import axios from 'axios';
 
 export class MapUploader {
-    private static http = axios.create();
-
-    public static async uploadMapAsync(file: File): Promise<string | null> {
+    static async uploadMapAsync(file: File): Promise<string | null> { // Указываем тип File
         if (!file) {
             throw new Error('File is required.');
         }
 
-        return await this.uploadMapImplAsync(file, file.name);
-    }
-
-    private static async uploadMapImplAsync(file: File, mapFileName: string): Promise<string | null> {
+        const mapFileName = file.name;
         const requestUri = `https://api.facepunch.com/api/public/rust-map-upload/${mapFileName}`;
+
         let retries = 0;
 
         while (retries < 10) {
             try {
-                const response: AxiosResponse<string> = await this.http.put(requestUri, file, {
+                const response = await axios.put(requestUri, file, {
                     headers: {
                         'Content-Type': 'application/octet-stream',
                     },
@@ -25,8 +21,8 @@ export class MapUploader {
 
                 if (response.status >= 200 && response.status < 300) {
                     const responseBody = response.data;
-                    if (!responseBody || !responseBody.startsWith('http')) {
-                        throw new Error('Backend sent an invalid success response when uploading the map.');
+                    if (!responseBody || !responseBody.startsWith("http")) {
+                        throw new Error("Backend sent an invalid success response when uploading the map.");
                     }
                     return responseBody;
                 } else if (response.status >= 400 && response.status < 500) {
