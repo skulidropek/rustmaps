@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import "./global.css"
+import "./global.css";
 
 interface MapEntry {
   name: string;
@@ -21,7 +21,7 @@ const LinkManager = {
   addLink: (name: string, url: string) => {
     const newLink = { name, url, timestamp: Date.now() };
     const links = LinkManager.getLinks();
-    links.push(newLink);
+    links.unshift(newLink); // Добавляем новый файл в начало массива
     localStorage.setItem('mapLinks', JSON.stringify(links));
   }
 };
@@ -34,7 +34,8 @@ const Home: React.FC = () => {
   const [links, setLinks] = useState<MapEntry[]>([]);
 
   useEffect(() => {
-    setLinks(LinkManager.getLinks());
+    const sortedLinks = LinkManager.getLinks().sort((a, b) => b.timestamp - a.timestamp);
+    setLinks(sortedLinks);
   }, []);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,7 +69,8 @@ const Home: React.FC = () => {
       if (response.data.url) {
         setUploadUrl(response.data.url);
         LinkManager.addLink(file.name, response.data.url);
-        setLinks(LinkManager.getLinks());
+        const sortedLinks = LinkManager.getLinks().sort((a, b) => b.timestamp - a.timestamp);
+        setLinks(sortedLinks);
       } else {
         setError('Failed to upload the map.');
       }
@@ -92,7 +94,7 @@ const Home: React.FC = () => {
             <label className="block text-lg mb-2">Choose file:</label>
             <input 
               type="file" 
-              accept=".map" // Разрешить только файлы с расширением .map
+              accept=".map" 
               onChange={handleFileChange}
               className="file-input file-input-bordered w-full bg-[#2c2c2c] text-[#bab1a8] border-[#3c3c3c]" 
             />
