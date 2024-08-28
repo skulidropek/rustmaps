@@ -1,7 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import formidable, { Fields, Files } from 'formidable';
 import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
 
 export const config = {
@@ -32,45 +31,19 @@ export default async function upload(req: NextApiRequest, res: NextApiResponse) 
       return;
     }
 
-    const chunkIndexNum = parseInt(chunkIndex, 10);
-    const totalChunksNum = parseInt(totalChunks, 10);
-    const uploadDir = path.join(process.cwd(), '/uploads');
-    const tempFilePath = path.join(uploadDir, `${fileName}.part`);
-
     try {
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir);
-      }
+      // Стримим текущий chunk на внешний API
+      const uploadUrl = await uploadMapChunkAsync(file.filepath, fileName);
 
-      // Обработка текущего chunk'а и сохранение его во временный файл
-      const data = fs.readFileSync(file.filepath);
-      fs.appendFileSync(tempFilePath, data);
-
-      // Удаление временного файла после обработки chunk'а
-      fs.unlinkSync(file.filepath);
-
-      if (chunkIndexNum === totalChunksNum - 1) {
-        // Если это последний chunk, переименовываем файл в окончательное имя
-        const finalFilePath = path.join(uploadDir, fileName);
-        fs.renameSync(tempFilePath, finalFilePath);
-
-        // Загружаем файл на внешнее API
-        const fileStream = fs.createReadStream(finalFilePath);
-        const uploadUrl = await uploadMapImplAsync(fileStream, fileName);
-
-        if (uploadUrl) {
-          console.log("Map successfully uploaded:", uploadUrl);
-          res.status(200).json({ url: uploadUrl });
-        } else {
-          console.error("Failed to upload map to external API");
-          res.status(500).json({ error: 'Failed to upload map to external API' });
-        }
-
-        // Удаляем локальный файл после успешной загрузки на внешний API
-        fs.unlinkSync(finalFilePath);
-
+      if (uploadUrl && parseInt(chunkIndex, 10) === parseInt(totalChunks, 10) - 1) {
+        // Если это последний chunk, возвращаем URL
+        res.status(200).json({ url: uploadUrl });
+      } else if (uploadUrl) {
+        // Возвращаем успех для текущего chunk'а
+        res.status(200).json({ message: `Chunk ${parseInt(chunkIndex, 10) + 1} of ${totalChunks} uploaded successfully` });
       } else {
-        res.status(200).json({ message: `Chunk ${chunkIndexNum + 1} of ${totalChunksNum} uploaded successfully` });
+        console.error("Failed to upload chunk to external API");
+        res.status(500).json({ error: 'Failed to upload chunk to external API' });
       }
     } catch (error) {
       console.error('Error handling chunk:', error);
@@ -79,12 +52,13 @@ export default async function upload(req: NextApiRequest, res: NextApiResponse) 
   });
 }
 
-async function uploadMapImplAsync(fileStream: fs.ReadStream, mapFileName: string): Promise<string | null> {
+async function uploadMapChunkAsync(filePath: string, mapFileName: string): Promise<string | null> {
   const requestUri = `https://api.facepunch.com/api/public/rust-map-upload/${mapFileName}`;
   let retries = 0;
 
   while (retries < 10) {
     try {
+      const fileStream = fs.createReadStream(filePath);
       const response = await axios.put(requestUri, fileStream, {
         headers: {
           'Content-Type': 'application/octet-stream',
@@ -99,7 +73,7 @@ async function uploadMapImplAsync(fileStream: fs.ReadStream, mapFileName: string
         if (!responseBody || !responseBody.startsWith("http")) {
           throw new Error("Backend sent an invalid success response when uploading the map.");
         }
-        return responseBody;
+        return responseBody; // Возвращаем URL, который прислал внешний API
       } else if (response.status >= 400 && response.status < 500) {
         return null;
       } else {
