@@ -29,13 +29,18 @@ export default async function upload(req: NextApiRequest, res: NextApiResponse) 
       return;
     }
 
+    if (!('filepath' in file)) {
+      console.error("Filepath not found");
+      res.status(500).json({ error: 'Filepath not found' });
+      return;
+    }
+
     try {
       console.log("File found, starting map upload");
 
-      // Чтение файла как буфер
-      const fileBuffer = await fs.promises.readFile(file.filepath);
+      const fileStream = fs.createReadStream(file.filepath);
 
-      const uploadUrl = await uploadMapImplAsync(fileBuffer, file.originalFilename || 'uploaded-map');
+      const uploadUrl = await uploadMapImplAsync(fileStream, file.originalFilename || 'uploaded-map');
 
       if (uploadUrl) {
         console.log("Map successfully uploaded:", uploadUrl);
@@ -48,7 +53,6 @@ export default async function upload(req: NextApiRequest, res: NextApiResponse) 
       console.error('Upload failed:', error);
       res.status(500).json({ error: 'An error occurred while uploading the map' });
     } finally {
-      // Удаление временного файла
       fs.unlink(file.filepath, (err) => {
         if (err) console.error('Failed to delete uploaded file:', err);
       });
@@ -57,13 +61,13 @@ export default async function upload(req: NextApiRequest, res: NextApiResponse) 
   });
 }
 
-async function uploadMapImplAsync(fileBuffer: Buffer, mapFileName: string): Promise<string | null> {
+async function uploadMapImplAsync(fileStream: fs.ReadStream, mapFileName: string): Promise<string | null> {
   const requestUri = `https://api.facepunch.com/api/public/rust-map-upload/${mapFileName}`;
   let retries = 0;
 
   while (retries < 10) {
     try {
-      const response = await axios.put(requestUri, fileBuffer, {
+      const response = await axios.put(requestUri, fileStream, {
         headers: {
           'Content-Type': 'application/octet-stream',
         },
