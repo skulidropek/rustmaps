@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import "./global.css";
 
+const CHUNK_SIZE = 1024 * 1024; // 1 MB
+
 interface MapEntry {
   name: string;
   url: string;
@@ -28,6 +30,7 @@ const LinkManager = {
 
 const Home: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number[]>([]);
   const [uploadUrl, setUploadUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -41,9 +44,34 @@ const Home: React.FC = () => {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
       setFile(event.target.files[0]);
+      setUploadProgress([]); // Сбрасываем прогресс
+      setUploadUrl(null);
+      setError(null);
     }
-    setUploadUrl(null);
-    setError(null);
+  };
+
+  const uploadChunk = async (chunk: Blob, index: number, totalChunks: number) => {
+    const formData = new FormData();
+    formData.append('chunk', chunk);
+    formData.append('fileName', file!.name);
+    formData.append('chunkIndex', index.toString());
+    formData.append('totalChunks', totalChunks.toString());
+
+    try {
+      const response = await axios.post('/api/upload', formData);
+      setUploadProgress((prev) => [...prev, index + 1]);
+
+      // Если это последний chunk, сохраняем URL
+      if (index === totalChunks - 1) {
+        setUploadUrl(response.data.url); // Устанавливаем URL, который вернул сервер
+        LinkManager.addLink(file!.name, response.data.url);
+        const sortedLinks = LinkManager.getLinks().sort((a, b) => b.timestamp - a.timestamp);
+        setLinks(sortedLinks);
+      }
+    } catch (err) {
+      setError('Failed to upload chunk ' + index);
+      throw err;
+    }
   };
 
   const handleUpload = async () => {
@@ -51,40 +79,26 @@ const Home: React.FC = () => {
       setError('Please select a file.');
       return;
     }
-  
+
     setLoading(true);
-    setError(null);
-    setUploadUrl(null);
-  
-    const formData = new FormData();
-    formData.append('file', file);
-  
-    try {
-      const response = await axios.post('/api/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-  
-      if (response.data.url) {
-        setUploadUrl(response.data.url);
-        LinkManager.addLink(file.name, response.data.url);
-        const sortedLinks = LinkManager.getLinks().sort((a, b) => b.timestamp - a.timestamp);
-        setLinks(sortedLinks);
-      } else {
-        setError('Failed to upload the map.');
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      try {
+        await uploadChunk(chunk, i, totalChunks);
+      } catch {
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      if (axios.isAxiosError(err) && err.response) {
-        setError('Error uploading the map: ' + err.response.data.error);
-      } else {
-        setError('An unknown error occurred.');
-      }
-    } finally {
-      setLoading(false);
     }
+
+    setLoading(false);
   };
-  
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-[#151413] text-[#bab1a8] font-sans">
       <div className="w-full max-w-md p-8 bg-[#1b1b1b] rounded-lg shadow-2xl">
@@ -99,6 +113,18 @@ const Home: React.FC = () => {
               className="file-input file-input-bordered w-full bg-[#2c2c2c] text-[#bab1a8] border-[#3c3c3c]" 
             />
           </div>
+          {loading && (
+            <div className="mb-4">
+              <div className="w-full bg-gray-200 rounded-full">
+                <div
+                  className="bg-blue-600 text-xs font-medium text-blue-100 text-center p-0.5 leading-none rounded-full"
+                  style={{ width: `${(uploadProgress.length / Math.ceil(file!.size / CHUNK_SIZE)) * 100}%` }}
+                >
+                  {uploadProgress.length}/{Math.ceil(file!.size / CHUNK_SIZE)} chunks uploaded
+                </div>
+              </div>
+            </div>
+          )}
           <button
             type="button"
             onClick={handleUpload}
