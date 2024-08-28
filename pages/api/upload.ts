@@ -1,7 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import formidable, { Fields, Files } from 'formidable';
+import formidable, { Fields, Files, File } from 'formidable';
 import fs from 'fs';
-import path from 'path';
 import axios from 'axios';
 
 export const config = {
@@ -12,41 +11,44 @@ export const config = {
 
 export default async function upload(req: NextApiRequest, res: NextApiResponse) {
   const form = formidable({
-    uploadDir: path.join(process.cwd(), '/uploads'),
     keepExtensions: true,
   });
 
   form.parse(req, async (err: any, fields: Fields, files: Files) => {
     if (err) {
-      console.error("Ошибка при парсинге формы:", err);
-      res.status(500).json({ error: 'Ошибка загрузки файла' });
+      console.error("Error parsing the form:", err);
+      res.status(500).json({ error: 'Error uploading file' });
       return;
     }
 
-    const file = Array.isArray(files.file) ? files.file[0] : files.file;
+    const file = Array.isArray(files.file) ? files.file[0] : (files.file as File | undefined);
 
     if (!file) {
-      console.log("Файл не найден");
-      res.status(400).json({ error: 'Файл не найден' });
+      console.log("File not found");
+      res.status(400).json({ error: 'File not found' });
       return;
     }
 
     try {
-      console.log("Файл найден, начинается загрузка карты");
-      const uploadUrl = await uploadMapImplAsync(fs.createReadStream(file.filepath), file.originalFilename || 'uploaded-map');
-      
+      console.log("File found, starting map upload");
+
+      // Чтение файла как буфер
+      const fileBuffer = await fs.promises.readFile(file.filepath);
+
+      const uploadUrl = await uploadMapImplAsync(fileBuffer, file.originalFilename || 'uploaded-map');
+
       if (uploadUrl) {
-        console.log("Карта успешно загружена:", uploadUrl);
+        console.log("Map successfully uploaded:", uploadUrl);
         res.status(200).json({ url: uploadUrl });
       } else {
-        console.error("Не удалось загрузить карту");
-        res.status(500).json({ error: 'Не удалось загрузить карту' });
+        console.error("Failed to upload map");
+        res.status(500).json({ error: 'Failed to upload map' });
       }
     } catch (error) {
       console.error('Upload failed:', error);
-      res.status(500).json({ error: 'Произошла ошибка при загрузке карты' });
+      res.status(500).json({ error: 'An error occurred while uploading the map' });
     } finally {
-      // Clean up the uploaded file to avoid leaving temporary files
+      // Удаление временного файла
       fs.unlink(file.filepath, (err) => {
         if (err) console.error('Failed to delete uploaded file:', err);
       });
@@ -55,15 +57,15 @@ export default async function upload(req: NextApiRequest, res: NextApiResponse) 
   });
 }
 
-async function uploadMapImplAsync(stream: fs.ReadStream, mapFileName: string): Promise<string | null> {
+async function uploadMapImplAsync(fileBuffer: Buffer, mapFileName: string): Promise<string | null> {
   const requestUri = `https://api.facepunch.com/api/public/rust-map-upload/${mapFileName}`;
   let retries = 0;
 
   while (retries < 10) {
     try {
-      const response = await axios.put(requestUri, stream, {
+      const response = await axios.put(requestUri, fileBuffer, {
         headers: {
-          'Content-Type': 'application/octet-stream', // Так как загружается файл
+          'Content-Type': 'application/octet-stream',
         },
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
