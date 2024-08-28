@@ -42,10 +42,12 @@ export default async function upload(req: NextApiRequest, res: NextApiResponse) 
         fs.mkdirSync(uploadDir);
       }
 
-      // Сохранение текущего chunk'а в файл
+      // Обработка текущего chunk'а и сохранение его во временный файл
       const data = fs.readFileSync(file.filepath);
       fs.appendFileSync(tempFilePath, data);
-      fs.unlinkSync(file.filepath); // Удаление временного файла
+
+      // Удаление временного файла после обработки chunk'а
+      fs.unlinkSync(file.filepath);
 
       if (chunkIndexNum === totalChunksNum - 1) {
         // Если это последний chunk, переименовываем файл в окончательное имя
@@ -58,11 +60,15 @@ export default async function upload(req: NextApiRequest, res: NextApiResponse) 
 
         if (uploadUrl) {
           console.log("Map successfully uploaded:", uploadUrl);
-          res.status(200).json({ url: uploadUrl }); // Возвращаем URL, который прислал внешний API
+          res.status(200).json({ url: uploadUrl });
         } else {
           console.error("Failed to upload map to external API");
           res.status(500).json({ error: 'Failed to upload map to external API' });
         }
+
+        // Удаляем локальный файл после успешной загрузки на внешний API
+        fs.unlinkSync(finalFilePath);
+
       } else {
         res.status(200).json({ message: `Chunk ${chunkIndexNum + 1} of ${totalChunksNum} uploaded successfully` });
       }
@@ -93,7 +99,7 @@ async function uploadMapImplAsync(fileStream: fs.ReadStream, mapFileName: string
         if (!responseBody || !responseBody.startsWith("http")) {
           throw new Error("Backend sent an invalid success response when uploading the map.");
         }
-        return responseBody; // Возвращаем URL, который прислал внешний API
+        return responseBody;
       } else if (response.status >= 400 && response.status < 500) {
         return null;
       } else {
