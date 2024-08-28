@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import "./global.css";
 
-const CHUNK_SIZE = 1024 * 1024; // 1 MB
+const CHUNK_SIZE = 512 * 1024; // 0.5 MB
 
 interface MapEntry {
   name: string;
