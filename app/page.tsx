@@ -84,7 +84,81 @@ const Home: React.FC = () => {
       setLoading(false);
     }
   };
-  
+
+  const handleDownloadPlugin = (mapUrl: string, mapName: string) => {
+    // Format the map name to follow C# naming conventions (PascalCase)
+    const formattedMapName = mapName
+      .replace(/\.[^/.]+$/, '') // Remove file extension
+      .split(/[^a-zA-Z0-9]/) // Split by non-alphanumeric characters
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()) // Capitalize first letter of each part
+      .join(''); // Join without spaces
+    
+    const pluginClassName = `${formattedMapName}MapUrlSetter`;
+    
+    // Create the plugin content with the map URL
+    const pluginContent = `using System;
+using Oxide.Core;
+
+namespace Oxide.Plugins
+{
+    [Info("${pluginClassName}", "RustGPT", "1.0.0")]
+    public class ${pluginClassName} : RustPlugin
+    {
+        public static string MapUrl { get; set; } = "${mapUrl}";
+
+        #region Oxide Hooks
+
+        private void Loaded()
+        {
+            SetMapUrl(MapUrl);
+        }
+
+        #endregion Oxide Hooks
+
+        #region Core Methods
+
+        private static void SetMapUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                Interface.Oxide.LogError("Map download URL cannot be empty!");
+                return;
+            }
+
+            try
+            {
+                ConVar.Server.levelurl = url;
+                World.Url = url;
+                Interface.Oxide.LogInfo($"Map download URL set: {url}");
+            }
+            catch (Exception ex)
+            {
+                Interface.Oxide.LogError($"Error setting map URL: {ex.Message}");
+            }
+        }
+
+        #endregion Core Methods
+    }
+}`;
+
+    // Create a blob with the plugin content
+    const blob = new Blob([pluginContent], { type: 'text/plain' });
+    
+    // Create a download link
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${pluginClassName}.cs`;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 0);
+  };
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-[#151413] text-[#bab1a8] font-sans">
       <div className="w-full max-w-md p-8 bg-[#1b1b1b] rounded-lg shadow-2xl">
@@ -130,6 +204,14 @@ const Home: React.FC = () => {
                 <strong className="text-lg">{link.name}</strong><br />
                 <small className="text-[#bab1a8]">{new Date(link.timestamp).toLocaleString()}</small><br />
                 <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-[#d9534f] underline break-words">{link.url}</a>
+                <div className="mt-2">
+                  <button 
+                    onClick={() => handleDownloadPlugin(link.url, link.name)}
+                    className="btn bg-[#4e8d59] hover:bg-[#3d7047] text-white text-sm py-1 px-3 rounded"
+                  >
+                    Download CS Plugin
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
